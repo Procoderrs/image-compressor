@@ -1,12 +1,17 @@
 "use client"
 // "use client" is required: this component uses state (useState), events
-// (onClick, onChange, onPointer...) and browser APIs (File, canvas, URL).
+// (onClick, onChange, onPointer, onDrop...) and browser APIs (File, canvas, URL).
 // Those only exist in the browser, never on the server.
 
 import { useState, useRef } from 'react'
 import formatSize from '@/lib/formatSize' // number of bytes -> "64.0 KB"
 import compressImage from '@/lib/compressImage' // (file, value) -> compressed Blob
 import JSZip from 'jszip' // builds a .zip file in the browser
+
+// The only file types we accept. The <input accept="..."> filter does NOT
+// apply to drag and drop, so we check the type ourselves in addFiles().
+// It lives outside the component so it is created once, not on every render.
+const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp']
 
 /*
  * HOW THE WHOLE COMPONENT FITS TOGETHER
@@ -26,7 +31,9 @@ import JSZip from 'jszip' // builds a .zip file in the browser
  *     compressedBlob, compressedSize, compressedUrl
  *   }
  *
- * Flow:  Select -> handleFileChange -> images list -> cards
+ * Flow:  Select button -> handleFileChange --\
+ *                                             >-> addFiles -> images list -> cards
+ *        Drop on the box -> handleDrop ------/
  *        Click card -> selected id -> comparison box
  *        Compress / Apply -> compressOne -> updateImage -> cards update
  *        Download All -> handleDownloadAll -> zip
@@ -54,20 +61,28 @@ export default function ImageUploader() {
   // Text shown after "Download All", e.g. "2 of 3 images downloaded".
   const [zipMessage, setZipMessage] = useState("")
 
+  // true while a file is being dragged OVER the upload box.
+  // It is only used to highlight the box (change its colors).
+  const [isOver, setIsOver] = useState(false)
+
   // A ref gives us the REAL DOM element of the comparison box, so we can
   // measure its position and width (needed to turn mouse pixels into percent).
   const boxRef = useRef(null)
 
   // ======================== ADDING IMAGES ========================
 
-  // Runs when the user picks files in the hidden <input type="file">.
-  async function handleFileChange(e) {
-    // e.target is the <input>. e.target.files is a FileList (array-like, no .map).
-    const files = e.target.files
-    if (!files || files.length === 0) return // nothing chosen, stop here
+  // The ONE function that turns files into image objects.
+  // Both ways of adding files (the Select button and drag and drop) call it,
+  // because both give us the same thing: a FileList.
+  function addFiles(fileList) {
+    // Array.from turns the FileList (array-like, no .map) into a real array.
+    // filter keeps only JPEG, PNG and WebP, so a PDF or .txt dropped on the
+    // box is ignored.
+    const filesFrom = Array.from(fileList).filter((file) =>
+      ACCEPTED.includes(file.type)
+    )
 
-    // Array.from turns the FileList into a real array so .map works.
-    const filesFrom = Array.from(files)
+    if (filesFrom.length === 0) return // nothing valid, stop here
 
     // For each File, build one object for our list (the shape shown at the top).
     const output = filesFrom.map((file) => ({
@@ -83,9 +98,51 @@ export default function ImageUploader() {
     // Functional update: "prev" is always the latest list.
     // Spread keeps the old images and adds the new ones at the end.
     setImages((prev) => [...prev, ...output])
+  }
+
+  // First way in: runs when the user picks files in the hidden <input type="file">.
+  function handleFileChange(e) {
+    // e.target is the <input>. e.target.files is a FileList.
+    addFiles(e.target.files)
 
     // Reset the input so choosing the SAME file again still fires onChange.
     e.target.value = ''
+  }
+
+  // ======================== DRAG AND DROP (files from the computer) ========================
+  // These three handlers sit on the upload box. They are different from the
+  // comparison divider below: that one is a drag we built ourselves with
+  // pointer events, this one uses the browser's built-in drag and drop system.
+
+  // Runs again and again while a file is held over the box.
+  function handleDragOver(e) {
+    // By default the browser says "you cannot drop here".
+    // preventDefault changes that answer to "yes, dropping is allowed".
+    // Without this line, onDrop never fires.
+    e.preventDefault()
+    setIsOver(true) // highlight the box
+  }
+
+  // Runs when the dragged file leaves the box.
+  function handleDragLeave(e) {
+    // dragleave also fires when the file moves onto a child element inside
+    // the box (the text, the label). That is not a real exit, and it would
+    // make the highlight flicker. relatedTarget is the element we are
+    // entering, so if it is still inside the box, ignore this event.
+    if (e.currentTarget.contains(e.relatedTarget)) return
+
+    setIsOver(false) // really left the box, remove the highlight
+  }
+
+  // Second way in: runs when the user lets go of the file over the box.
+  function handleDrop(e) {
+    // By default the browser would open the dropped file in the tab and
+    // replace our page. preventDefault stops that.
+    e.preventDefault()
+    setIsOver(false)
+
+    // dataTransfer.files is a FileList, the same kind of thing the input gives.
+    addFiles(e.dataTransfer.files)
   }
 
   // ======================== COMPRESSING ========================
@@ -270,10 +327,22 @@ export default function ImageUploader() {
 
   return (
     <section className="mx-auto max-w-4xl">
-      {/* ---------- Upload area ---------- */}
-      <div className="rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50 p-8 text-center">
-        <p className="mb-4 text-slate-600">Select JPEG, PNG ya WebP images</p>
-
+      {/* ---------- Upload area (also the drop zone) ---------- */}
+      {/* The three drag handlers turn this box into a drop target.
+          The template literal switches the colors while a file is over it. */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`rounded-2xl border-2 border-dashed p-8 text-center transition ${
+          isOver
+            ? 'border-indigo-600 bg-indigo-100'
+            : 'border-indigo-300 bg-indigo-50'
+        }`}
+      >
+<p className="mb-4 text-slate-600">
+  {isOver ? 'Drop your images here' : 'Drag and drop images here, or'}
+</p>
         {/* The label is the pretty button. htmlFor matches the input's id,
             so clicking the label clicks the (hidden) input and opens the picker. */}
         <label
@@ -498,8 +567,7 @@ export default function ImageUploader() {
                 ) : (
                   <div className="flex h-96 items-center justify-center rounded-lg bg-slate-50 px-4">
                     <p className="text-center text-sm text-amber-700">
-                      This image is not compress . press btn to  compress it .
-                    </p>
+                     This image is not compressed yet                    </p>
                   </div>
                 )}
               </div>
