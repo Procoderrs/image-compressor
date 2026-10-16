@@ -284,7 +284,7 @@ function getDownloadName(name){
                 ) : (
                   <div className="flex h-96 items-center justify-center rounded-lg bg-slate-50 px-4">
                     <p className="text-center text-sm text-amber-700">
-                      Ye image abhi compress nahi hui. Pehle "Compress Images" dabao.
+                      This image is not compress . press btn to  compress it .
                     </p>
                   </div>
                 )}
