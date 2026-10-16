@@ -9,7 +9,8 @@ export default function ImageUploader() {
   const [isSelected, setSelected] = useState("")
   const [position, setPosition] = useState(50)
   const [isDragging, setIsDragging] = useState(false)
-  const [quality, setQuality] = useState(70) // 10 se 100 (percent)
+  const [quality, setQuality] = useState(70) // JPEG/WebP: 10 se 100 (percent)
+  const [colors, setColors] = useState(64) // PNG: 8 se 256 colors
 
   const boxRef = useRef(null)
 
@@ -37,7 +38,12 @@ export default function ImageUploader() {
         // purana compressed URL saaf karo (memory leak se bachne ke liye)
         if (img.compressedUrl) URL.revokeObjectURL(img.compressedUrl)
 
-        const blob = await compressImage(img.file, quality / 100)
+        // P4b: har image ko uski qism ka number do
+        // PNG -> colors (8 se 256), baaqi -> quality (0.1 se 1)
+        const isPng = img.file.type === "image/png"
+        const value = isPng ? colors : quality / 100
+
+        const blob = await compressImage(img.file, value)
         const compressedUrl = URL.createObjectURL(blob)
 
         setImages((prev) =>
@@ -88,6 +94,15 @@ export default function ImageUploader() {
   function handleUp() {
     setIsDragging(false)
   }
+
+
+function getDownloadName(name){
+
+  const dot = name.lastIndexOf(".")
+  if (dot===-1) return `${name} - compressed`
+  return `${name.slice(0,dot)} - compressed${name.slice(dot)}`
+
+}
 
   const selectedImage = images.find((item) => item.id === isSelected)
 
@@ -180,17 +195,32 @@ export default function ImageUploader() {
                     </span>
 
                     {img.compressedSize ? (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
-                        After: {formatSize(img.compressedSize)} (-
-                        {(((img.size - img.compressedSize) / img.size) * 100).toFixed(0)}
-                        %)
-                      </span>
+                      img.compressedSize < img.size ? (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
+                          After: {formatSize(img.compressedSize)} (-
+                          {(((img.size - img.compressedSize) / img.size) * 100).toFixed(0)}
+                          %)
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-700">
+                          Already optimized
+                        </span>
+                      )
                     ) : (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-700">
-                        Not compressed
-                      </span>
+                      <span> Not compressed</span>
                     )}
                   </div>
+
+                  {img.compressedUrl && (
+  <a
+    href={img.compressedUrl}
+    download={getDownloadName(img.name)}
+    onClick={(e) => e.stopPropagation()}
+    className="mt-3 block rounded-lg bg-indigo-600 py-1.5 text-center text-xs font-semibold text-white transition hover:bg-indigo-700"
+  >
+    Download
+  </a>
+)}
                 </div>
               </div>
             ))}
@@ -260,24 +290,47 @@ export default function ImageUploader() {
                 )}
               </div>
 
-              {/* Right: vertical quality slider */}
+              {/* Right: vertical slider (PNG -> Colors, baaqi -> Quality) */}
               <div className="flex shrink-0 flex-col items-center gap-2 self-end">
-                <span className="text-xs font-semibold text-slate-700">
-                  {quality}%
-                </span>
-                <input
-                  type="range"
-                  min="10"
-                  max="100"
-                  step="5"
-                  value={quality}
-                  onChange={(e) => setQuality(Number(e.target.value))}
-                  disabled={isCompressImage}
-                  aria-label="Compression quality"
-                  className="h-96 w-4 cursor-pointer"
-                  style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
-                />
-                <span className="text-xs font-medium text-slate-500">Quality</span>
+                {selectedImage.file.type === "image/png" ? (
+                  <>
+                    <span className="text-xs font-semibold text-slate-700">
+                      {colors}
+                    </span>
+                    <input
+                      type="range"
+                      min="8"
+                      max="256"
+                      step="8"
+                      value={colors}
+                      onChange={(e) => setColors(Number(e.target.value))}
+                      disabled={isCompressImage}
+                      aria-label="PNG colors"
+                      className="h-96 w-4 cursor-pointer"
+                      style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
+                    />
+                    <span className="text-xs font-medium text-slate-500">Colors</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xs font-semibold text-slate-700">
+                      {quality}%
+                    </span>
+                    <input
+                      type="range"
+                      min="10"
+                      max="100"
+                      step="5"
+                      value={quality}
+                      onChange={(e) => setQuality(Number(e.target.value))}
+                      disabled={isCompressImage}
+                      aria-label="Compression quality"
+                      className="h-96 w-4 cursor-pointer"
+                      style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
+                    />
+                    <span className="text-xs font-medium text-slate-500">Quality</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
